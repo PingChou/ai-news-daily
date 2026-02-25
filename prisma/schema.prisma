@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// 数据源配置
+model Source {
+  id        String   @id @default(cuid())
+  name      String   // 来源名称
+  type      String   // rss | api | custom
+  url       String   // RSS链接或API地址
+  category  String   // 分类：news | paper | blog
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  articles  Article[]
+}
+
+// 文章
+model Article {
+  id            String   @id @default(cuid())
+  title         String              // 原始标题
+  titleEn       String?             // 英文标题（如果原文是中文）
+  titleZh       String?             // 中文标题（如果原文是英文）
+  originalUrl   String   @unique    // 原文链接
+  sourceId      String
+  source        Source   @relation(fields: [sourceId], references: [id])
+  publishedAt   DateTime            // 原始发布时间
+  fetchedAt     DateTime @default(now())
+
+  // AI 生成内容 - 中文
+  summary       String?  // AI 摘要
+  summarySimple String?  // 简明版摘要（面向大众）
+  summaryDeep   String?  // 深度解读（面向开发者）
+
+  // AI 生成内容 - 英文
+  summaryEn       String?  // English summary
+  summarySimpleEn String?  // Simple version for general readers
+  summaryDeepEn   String?  // Deep analysis for developers
+
+  difficulty    String?  @default("general") // beginner | general | advanced
+  lang          String?  @default("en")      // 原文语言: en | zh
+
+  // 元数据
+  imageUrl      String?
+  tags          ArticleTag[]
+
+  // 状态
+  status        String   @default("pending") // pending | processed | featured
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// 标签
+model Tag {
+  id        String        @id @default(cuid())
+  name      String        @unique
+  articles  ArticleTag[]
+}
+
+// 文章-标签关联
+model ArticleTag {
+  articleId String
+  tagId     String
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+}

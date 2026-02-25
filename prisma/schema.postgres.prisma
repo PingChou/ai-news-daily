@@ -1,0 +1,6 @@
+# 切换到 PostgreSQL 时使用此配置
+# DATABASE_URL="postgresql://user:password@host:5432/database?schema=public"
+
+# 推荐使用 Supabase 或 Neon（免费额度够用）
+# Supabase: https://supabase.com
+# Neon: https://neon.tech
