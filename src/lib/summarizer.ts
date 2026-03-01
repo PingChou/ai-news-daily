@@ -140,6 +140,17 @@ async function callOpenAI(prompt: string): Promise<string> {
   })
 
   const data = await res.json()
+
+  // 检查 API 错误
+  if (!res.ok) {
+    throw new Error(`LLM API error (${res.status}): ${JSON.stringify(data)}`)
+  }
+
+  // 检查返回数据结构
+  if (!data.choices?.[0]?.message?.content) {
+    throw new Error(`Invalid LLM response: ${JSON.stringify(data)}`)
+  }
+
   return data.choices[0].message.content
 }
 
@@ -159,6 +170,17 @@ async function callAnthropic(prompt: string): Promise<string> {
   })
 
   const data = await res.json()
+
+  // 检查 API 错误
+  if (!res.ok) {
+    throw new Error(`Anthropic API error (${res.status}): ${JSON.stringify(data)}`)
+  }
+
+  // 检查返回数据结构
+  if (!data.content?.[0]?.text) {
+    throw new Error(`Invalid Anthropic response: ${JSON.stringify(data)}`)
+  }
+
   return data.content[0].text
 }
 
