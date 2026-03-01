@@ -7,6 +7,91 @@ const LLM_CONFIG = {
   model: process.env.LLM_MODEL || 'gpt-4o-mini',
 }
 
+// 修复不规范的 JSON 字符串
+function repairJson(str: string): string {
+  // 1. 移除控制字符
+  str = str.replace(/[\x00-\x1F\x7F]/g, (char) => {
+    if (char === '\n') return '\\n'
+    if (char === '\r') return '\\r'
+    if (char === '\t') return '\\t'
+    return ''
+  })
+
+  // 2. 修复未转义的引号（在字符串值内部）
+  // 这个正则尝试修复 "key": "value with "quotes" inside" 的情况
+  str = str.replace(/"([^"]+)":\s*"([^"]*)(")([^"]*)(")/g, '"$1": "$2\\"$4$5"')
+
+  // 3. 修复未终止的字符串（在末尾添加引号）
+  // 查找最后一个未闭合的引号
+  const quoteCount = (str.match(/(?<!\\)"/g) || []).length
+  if (quoteCount % 2 !== 0) {
+    str = str + '"'
+  }
+
+  // 4. 修复未闭合的括号
+  const openBraces = (str.match(/{/g) || []).length
+  const closeBraces = (str.match(/}/g) || []).length
+  if (openBraces > closeBraces) {
+    str = str + '}'.repeat(openBraces - closeBraces)
+  }
+
+  const openBrackets = (str.match(/\[/g) || []).length
+  const closeBrackets = (str.match(/]/g) || []).length
+  if (openBrackets > closeBrackets) {
+    str = str + ']'.repeat(openBrackets - closeBrackets)
+  }
+
+  return str
+}
+
+// 安全解析 JSON，带修复尝试
+function safeParseJson(str: string): Record<string, unknown> | null {
+  // 首先尝试直接解析
+  try {
+    return JSON.parse(str)
+  } catch {
+    // 忽略，继续尝试修复
+  }
+
+  // 尝试修复后解析
+  try {
+    const repaired = repairJson(str)
+    return JSON.parse(repaired)
+  } catch {
+    // 忽略，继续尝试其他方法
+  }
+
+  // 尝试提取各个字段的值
+  try {
+    const result: Record<string, unknown> = {}
+
+    // 提取字符串字段
+    const stringFields = ['lang', 'titleZh', 'titleEn', 'summary', 'summarySimple', 'summaryDeep', 'summaryEn', 'summarySimpleEn', 'summaryDeepEn', 'difficulty']
+    for (const field of stringFields) {
+      const match = str.match(new RegExp(`"${field}"\\s*:\\s*"([^"]*(?:\\.[^"]*)*)"`, 's'))
+      if (match) {
+        result[field] = match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"')
+      }
+    }
+
+    // 提取 tags 数组
+    const tagsMatch = str.match(/"tags"\s*:\s*\[([\s\S]*?)\]/)
+    if (tagsMatch) {
+      const tagsStr = tagsMatch[1]
+      const tags = tagsStr.match(/"([^"]+)"/g)?.map(t => t.slice(1, -1)) || []
+      result.tags = tags
+    }
+
+    if (Object.keys(result).length > 0) {
+      return result
+    }
+  } catch {
+    // 忽略
+  }
+
+  return null
+}
+
 interface SummarizeResult {
   // 中文
   titleZh: string
@@ -46,29 +131,17 @@ export async function summarizeArticle(
     }
   }
 
-  const prompt = `You are an AI news editor. Analyze the following article and generate bilingual (Chinese and English) summaries.
+  const prompt = `分析以下 AI 新闻文章，生成双语摘要。请严格按照 JSON 格式返回，不要添加任何额外文字。
 
-Article Title: ${title}
+文章标题: ${title}
 
-Article Content:
-${content.slice(0, 3000)}
+文章内容:
+${content.slice(0, 2000)}
 
-Please return a JSON object with the following fields:
-{
-  "lang": "en" or "zh" (the original language of the article),
-  "titleZh": "Chinese translation of the title",
-  "titleEn": "English translation of the title",
-  "summary": "100字以内的核心摘要（中文）",
-  "summarySimple": "用通俗易懂的语言，给普通读者看的50字简介（中文）",
-  "summaryDeep": "给开发者看的200字技术解读，包含技术细节和影响分析（中文）",
-  "summaryEn": "Core summary within 100 words (English)",
-  "summarySimpleEn": "Simple 50-word introduction for general readers (English)",
-  "summaryDeepEn": "200-word technical analysis for developers (English)",
-  "difficulty": "beginner" or "general" or "advanced",
-  "tags": ["tag1", "tag2", "tag3"] (Chinese tags)
-}
+请返回以下 JSON 格式（确保 JSON 语法正确，所有字符串用双引号包裹）:
+{"lang":"en或zh","titleZh":"中文标题","titleEn":"英文标题","summary":"100字内中文核心摘要","summarySimple":"50字通俗易懂简介","summaryDeep":"200字技术解读","summaryEn":"English summary","summarySimpleEn":"Simple intro","summaryDeepEn":"Technical analysis","difficulty":"beginner或general或advanced","tags":["标签1","标签2"]}
 
-Return ONLY the JSON object, no other content.`
+只返回 JSON，不要其他内容。`
 
   try {
     let response: string
@@ -91,13 +164,11 @@ Return ONLY the JSON object, no other content.`
       cleanedResponse = jsonMatch[0]
     }
 
-    // 解析 JSON 响应
-    let result
-    try {
-      result = JSON.parse(cleanedResponse)
-    } catch (parseError) {
-      console.error('[LLM] Failed to parse JSON:', cleanedResponse.slice(0, 500))
-      throw new Error(`JSON parse error: ${parseError}`)
+    // 使用安全解析函数
+    const result = safeParseJson(cleanedResponse)
+    if (!result) {
+      console.error('[LLM] Failed to parse JSON after repair attempts:', cleanedResponse.slice(0, 500))
+      throw new Error('Failed to parse LLM response as JSON')
     }
     return {
       titleZh: result.titleZh || title,
