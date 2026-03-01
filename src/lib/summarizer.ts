@@ -85,8 +85,20 @@ Return ONLY the JSON object, no other content.`
       cleanedResponse = cleanedResponse.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
     }
 
+    // 尝试提取 JSON 对象（处理模型返回多余内容的情况）
+    const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      cleanedResponse = jsonMatch[0]
+    }
+
     // 解析 JSON 响应
-    const result = JSON.parse(cleanedResponse)
+    let result
+    try {
+      result = JSON.parse(cleanedResponse)
+    } catch (parseError) {
+      console.error('[LLM] Failed to parse JSON:', cleanedResponse.slice(0, 500))
+      throw new Error(`JSON parse error: ${parseError}`)
+    }
     return {
       titleZh: result.titleZh || title,
       titleEn: result.titleEn || title,
