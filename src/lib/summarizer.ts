@@ -125,6 +125,8 @@ async function callOpenAI(prompt: string): Promise<string> {
     ? 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
     : 'https://api.openai.com/v1/chat/completions'
 
+  console.log(`[LLM] Calling ${isZhipu ? 'Zhipu GLM' : 'OpenAI'} with model: ${LLM_CONFIG.model}`)
+
   const res = await fetch(baseUrl, {
     method: 'POST',
     headers: {
@@ -143,12 +145,14 @@ async function callOpenAI(prompt: string): Promise<string> {
 
   // 检查 API 错误
   if (!res.ok) {
-    throw new Error(`LLM API error (${res.status}): ${JSON.stringify(data)}`)
+    console.error(`[LLM] API error response:`, JSON.stringify(data))
+    throw new Error(`LLM API error (${res.status}): ${data.error?.message || JSON.stringify(data)}`)
   }
 
   // 检查返回数据结构
   if (!data.choices?.[0]?.message?.content) {
-    throw new Error(`Invalid LLM response: ${JSON.stringify(data)}`)
+    console.error(`[LLM] Invalid response structure:`, JSON.stringify(data))
+    throw new Error(`Invalid LLM response: missing choices[0].message.content`)
   }
 
   return data.choices[0].message.content
